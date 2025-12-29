@@ -41,8 +41,8 @@ jobs:
       - name: Set AKS context
         uses: azure/aks-set-context@v4
         with:
-          resource-group: ${{ secrets.AKS_RESOURCE_GROUP }}
-          cluster-name: ${{ secrets.AKS_CLUSTER_NAME }}
+          resource-group: ${{ inputs.ResourceGroup }}
+          cluster-name: ${{ inputs.AKS_CLUSTER_NAME }}
 
       - name: Docker login to ACR
         uses: docker/login-action@v3
