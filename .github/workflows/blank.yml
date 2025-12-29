@@ -14,7 +14,10 @@ on:
       imageTag:
         description: 'Image Tag (defaults to commit SHA)'
         required: false
-
+      ResourceGroup:
+        description: 'AKS Resource Group'
+        required: true
+        default: 'dev-rg'
 env:
   ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}
 
