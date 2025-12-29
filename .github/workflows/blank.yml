@@ -1,0 +1,100 @@
+name: Build & Deploy to AKS (ACR creds + imagePullSecret)
+
+on:
+  #push:
+    #branches: ["main"]
+  workflow_dispatch:
+
+env:
+  NAMESPACE: login-lab
+  IMAGE_REPO: k8slab
+  MANIFEST_PATH: k8s/aks-login-lab.yaml
+
+jobs:
+  build_push_deploy:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Authenticate to Azure (for kubectl context to AKS)
+      - name: Azure login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      # Set kubectl context to AKS
+      - name: Set AKS context
+        uses: azure/aks-set-context@v4
+        with:
+          resource-group: ${{ secrets.AKS_RESOURCE_GROUP }}
+          cluster-name: ${{ secrets.AKS_CLUSTER_NAME }}
+
+      # Login to ACR for pushing images (no az acr login, no RBAC needed)
+      - name: Docker login to ACR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ secrets.ACR_LOGIN_SERVER }}
+          username: ${{ secrets.ACR_USERNAME }}
+          password: ${{ secrets.ACR_PASSWORD }}
+
+      - name: Compute image tag
+        id: vars
+        run: |
+          echo "TAG=${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
+
+      # Build & Push images
+      - name: Build & push users-api
+        run: |
+          docker build -t "${{ secrets.ACR_LOGIN_SERVER }}/${{ env.IMAGE_REPO }}/users-api:${{ steps.vars.outputs.TAG }}" ./users-api
+          docker push "${{ secrets.ACR_LOGIN_SERVER }}/${{ env.IMAGE_REPO }}/users-api:${{ steps.vars.outputs.TAG }}"
+
+      - name: Build & push auth-api
+        run: |
+          docker build -t "${{ secrets.ACR_LOGIN_SERVER }}/${{ env.IMAGE_REPO }}/auth-api:${{ steps.vars.outputs.TAG }}" ./auth-api
+          docker push "${{ secrets.ACR_LOGIN_SERVER }}/${{ env.IMAGE_REPO }}/auth-api:${{ steps.vars.outputs.TAG }}"
+
+      - name: Build & push web
+        run: |
+          docker build -t "${{ secrets.ACR_LOGIN_SERVER }}/${{ env.IMAGE_REPO }}/web:${{ steps.vars.outputs.TAG }}" ./web
+          docker push "${{ secrets.ACR_LOGIN_SERVER }}/${{ env.IMAGE_REPO }}/web:${{ steps.vars.outputs.TAG }}"
+
+      # Ensure namespace + create/update pull secret used by Deployments
+      - name: Create/Update imagePullSecret in AKS
+        run: |
+          kubectl create namespace "${{ env.NAMESPACE }}" --dry-run=client -o yaml | kubectl apply -f -
+
+          kubectl -n "${{ env.NAMESPACE }}" create secret docker-registry acr-pull \
+            --docker-server="${{ secrets.ACR_LOGIN_SERVER }}" \
+            --docker-username="${{ secrets.ACR_USERNAME }}" \
+            --docker-password="${{ secrets.ACR_PASSWORD }}" \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+      # Render and apply manifests
+      - name: Render manifests
+        run: |
+          cp "${{ env.MANIFEST_PATH }}" rendered.yaml
+          sed -i "s|__ACR_LOGIN_SERVER__|${{ secrets.ACR_LOGIN_SERVER }}|g" rendered.yaml
+          sed -i "s|__TAG__|${{ steps.vars.outputs.TAG }}|g" rendered.yaml
+
+          # Optional ingress host replacement
+          if [ -n "${{ secrets.INGRESS_HOST }}" ]; then
+            sed -i "s|login.REPLACE_ME|${{ secrets.INGRESS_HOST }}|g" rendered.yaml
+          fi
+
+      - name: Deploy to AKS
+        run: |
+          kubectl apply -f rendered.yaml
+          kubectl -n "${{ env.NAMESPACE }}" rollout status deploy/users-api --timeout=240s
+          kubectl -n "${{ env.NAMESPACE }}" rollout status deploy/auth-api --timeout=240s
+          kubectl -n "${{ env.NAMESPACE }}" rollout status deploy/web --timeout=240s
+
+      - name: Show resources
+        run: |
+          kubectl -n "${{ env.NAMESPACE }}" get pods -o wide
+          kubectl -n "${{ env.NAMESPACE }}" get svc -o wide
+          kubectl -n "${{ env.NAMESPACE }}" get ingress -o wide
