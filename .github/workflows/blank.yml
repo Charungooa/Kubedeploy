@@ -18,6 +18,10 @@ on:
         description: 'AKS Resource Group'
         required: true
         default: 'dev-rg'
+      aks_cluster_name:
+        description: "AKS cluster name"
+        required: true
+        default: "dev-aks"
 env:
   ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}
 
