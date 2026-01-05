@@ -103,7 +103,7 @@ jobs:
           kubectl apply -f k8s/service.yaml -n ${{ inputs.namespace }}
 
           # Wait for rollout of the login microservice deployment
-          kubectl -n ${{ inputs.namespace }} rollout status deployment/login-microservice-deployment --timeout=180s
+          kubectl -n ${{ inputs.namespace }} rollout status deployment/login-microservice --timeout=180s
 
           # Optional: Show service endpoint
           echo "Deployment complete. Check service:"
