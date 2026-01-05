@@ -22,11 +22,18 @@ on:
         description: "AKS cluster name"
         required: true
         default: "dev-aks"
+      
+      secret_name:
+        description: 'Pull Secret name'
+        required: true
+        default: 'acr_pull_secret'
 
 env:
   ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}
   APP_NAME: login-microservice  # Name of your Python login app
-
+  DEPLOYMENT_NAME: login-microservice-deployment
+  CONTAINER_NAME: login-microservice
+  PULL_SECRET_NAME: ${{ github.event.inputs.secret_name }}
 jobs:
   build_push_deploy:
     runs-on: ubuntu-latest
@@ -63,12 +70,24 @@ jobs:
           fi
 
       - name: Build and push Docker image
+        id: build
         run: |
           IMAGE=${{ env.ACR_LOGIN_SERVER }}/${{ env.APP_NAME }}:${{ steps.vars.outputs.tag }}
           echo "Building and pushing: $IMAGE"
           docker build -t $IMAGE .
           docker push $IMAGE
-
+          echo "image=$IMAGE" >> $GITHUB_OUTPUT
+      
+      - name: Create ACR pull secret
+        run: |
+          SECRET_NAME=${{ env.PULL_SECRET_NAME }}
+          echo "Creating/Updating Docker registry secret: $SECRET_NAME in namespace ${{ inputs.namespace }}"
+          kubectl create secret docker-registry $SECRET_NAME \
+            --docker-server=${{ env.ACR_LOGIN_SERVER }} \
+            --docker-username=${{ secrets.ACR_USERNAME }} \
+            --docker-password=${{ secrets.ACR_PASSWORD }} \
+            --namespace ${{ inputs.namespace }} \
+            --dry-run=client -o yaml | kubectl apply -f -
       - name: Deploy to AKS
         run: |
           # Optional: Create/recreate namespace if needed
@@ -85,3 +104,11 @@ jobs:
           # Optional: Show service endpoint
           echo "Deployment complete. Check service:"
           kubectl get service login-microservice-service -n ${{ inputs.namespace }}
+
+      - name: Update Deployment with correct image tag
+        run: |
+          FULL_IMAGE=${{ steps.build.outputs.image }}
+          echo "Updating deployment with image: $FULL_IMAGE"
+          kubectl set image deployment/${{ env.DEPLOYMENT_NAME }} \
+            ${{ env.CONTAINER_NAME }}=$FULL_IMAGE \
+            -n ${{ inputs.namespace }}

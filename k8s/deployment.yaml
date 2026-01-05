@@ -1,0 +1,22 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: login-microservice-deployment
+spec:
+  selector:
+    matchLabels:
+      app: login-microservice
+  template:
+    metadata:
+      labels:
+        app: login-microservice
+    spec:
+      containers:
+      - name: login-microservice
+        image: 
+        resources:
+          limits:
+            memory: "128Mi"
+            cpu: "500m"
+        ports:
+        - containerPort: 8000
