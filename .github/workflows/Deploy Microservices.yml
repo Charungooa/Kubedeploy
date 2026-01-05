@@ -1,0 +1,87 @@
+name: Deploy to AKS (With Manual Inputs) - Login Microservice
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment (dev, stage, prod)'
+        required: true
+        default: 'dev'
+      namespace:
+        description: 'Kubernetes Namespace'
+        required: true
+        default: 'login-lab'
+      imageTag:
+        description: 'Image Tag (defaults to commit SHA)'
+        required: false
+      ResourceGroup:
+        description: 'AKS Resource Group'
+        required: true
+        default: 'dev-rg'
+      aks_cluster_name:
+        description: "AKS cluster name"
+        required: true
+        default: "dev-aks"
+
+env:
+  ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}
+  APP_NAME: login-microservice  # Name of your Python login app
+
+jobs:
+  build_push_deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Azure login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Set AKS context
+        uses: azure/aks-set-context@v4
+        with:
+          resource-group: ${{ inputs.ResourceGroup }}
+          cluster-name: ${{ inputs.aks_cluster_name }}
+
+      - name: Docker login to ACR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.ACR_LOGIN_SERVER }}
+          username: ${{ secrets.ACR_USERNAME }}
+          password: ${{ secrets.ACR_PASSWORD }}
+
+      - name: Determine image tag
+        id: vars
+        run: |
+          if [ -n "${{ github.event.inputs.imageTag }}" ]; then
+            echo "tag=${{ github.event.inputs.imageTag }}" >> $GITHUB_OUTPUT
+          else
+            echo "tag=${{ github.sha }}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Build and push Docker image
+        run: |
+          IMAGE=${{ env.ACR_LOGIN_SERVER }}/${{ env.APP_NAME }}:${{ steps.vars.outputs.tag }}
+          echo "Building and pushing: $IMAGE"
+          docker build -t $IMAGE .
+          docker push $IMAGE
+
+      - name: Deploy to AKS
+        run: |
+          # Optional: Create/recreate namespace if needed
+          kubectl create namespace ${{ inputs.namespace }} --dry-run=client -o yaml | kubectl apply -f -
+
+          # Apply manifests in the specified namespace
+          kubectl apply -f k8s/secret.yaml -n ${{ inputs.namespace }} || echo "No secret.yaml (optional)"
+          kubectl apply -f k8s/deployment.yaml -n ${{ inputs.namespace }}
+          kubectl apply -f k8s/service.yaml -n ${{ inputs.namespace }}
+
+          # Wait for rollout of the login microservice deployment
+          kubectl -n ${{ inputs.namespace }} rollout status deployment/login-microservice-deployment --timeout=180s
+
+          # Optional: Show service endpoint
+          echo "Deployment complete. Check service:"
+          kubectl get service login-microservice-service -n ${{ inputs.namespace }}
