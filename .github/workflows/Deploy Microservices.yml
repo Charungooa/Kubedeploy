@@ -23,7 +23,7 @@ on:
         required: true
         default: "dev-aks"
       
-      secret_name:
+      PULL_SECRET_NAME:
         description: 'Pull Secret name'
         required: true
         default: 'acr_pull_secret'
