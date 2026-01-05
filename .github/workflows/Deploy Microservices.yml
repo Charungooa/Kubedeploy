@@ -14,6 +14,7 @@ on:
       imageTag:
         description: 'Image Tag (defaults to commit SHA)'
         required: false
+        default: 'v1.0'       
       ResourceGroup:
         description: 'AKS Resource Group'
         required: true
@@ -33,7 +34,7 @@ env:
   APP_NAME: login-microservice  # Name of your Python login app
   DEPLOYMENT_NAME: login-microservice-deployment
   CONTAINER_NAME: login-microservice
-  PULL_SECRET_NAME: ${{ github.event.inputs.secret_name }}
+  PULL_SECRET_NAME: ${{ github.event.inputs.PULL_SECRET_NAME }}
 jobs:
   build_push_deploy:
     runs-on: ubuntu-latest
