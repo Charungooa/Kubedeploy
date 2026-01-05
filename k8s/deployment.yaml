@@ -13,7 +13,7 @@ spec:
     spec:
       containers:
       - name: login-microservice
-        image: ${{ env.ACR_LOGIN_SERVER }}/login-microservice:latest
+        image: devrg2025.azurecr.io/login-microservice:latest
         resources:
           limits:
             memory: "128Mi"
@@ -21,4 +21,4 @@ spec:
         ports:
         - containerPort: 8000
         ImagePullSecrets:
-      - name: ${{ env.PULL_SECRET_NAME }}
+      - name: secret-82
