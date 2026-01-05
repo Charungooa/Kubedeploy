@@ -20,5 +20,5 @@ spec:
             cpu: "500m"
         ports:
         - containerPort: 8000
-        ImagePullSecrets:
+        imagePullPolicy:
       - name: secret-82
