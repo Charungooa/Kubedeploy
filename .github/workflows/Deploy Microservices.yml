@@ -80,6 +80,9 @@ jobs:
       
       - name: Create ACR pull secret
         run: |
+          # Optional: Create/recreate namespace if needed
+          kubectl create namespace ${{ inputs.namespace }} --dry-run=client -o yaml | kubectl apply -f -
+          # Create secret
           SECRET_NAME=${{ env.PULL_SECRET_NAME }}
           echo "Creating/Updating Docker registry secret: $SECRET_NAME in namespace ${{ inputs.namespace }}"
           kubectl create secret docker-registry $SECRET_NAME \
@@ -91,7 +94,7 @@ jobs:
       - name: Deploy to AKS
         run: |
           # Optional: Create/recreate namespace if needed
-          kubectl create namespace ${{ inputs.namespace }} --dry-run=client -o yaml | kubectl apply -f -
+          # kubectl create namespace ${{ inputs.namespace }} --dry-run=client -o yaml | kubectl apply -f -
 
           # Apply manifests in the specified namespace
           kubectl apply -f k8s/secret.yaml -n ${{ inputs.namespace }} || echo "No secret.yaml (optional)"
