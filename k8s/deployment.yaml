@@ -13,7 +13,7 @@ spec:
     spec:
       containers:
       - name: login-microservice
-        image: 
+        image: ${{ env.ACR_LOGIN_SERVER }}/login-microservice:latest
         resources:
           limits:
             memory: "128Mi"
