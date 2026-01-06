@@ -108,7 +108,7 @@ jobs:
         run: |
           echo "Deployment successful!"
           echo "Service details:"
-          kubectl get service login-microservice-service -n ${{ inputs.namespace }} -o wide
+          kubectl get service login-microservice -n ${{ inputs.namespace }} -o wide
           echo ""
           echo "To get external IP (if LoadBalancer):"
-          echo "kubectl get svc login-microservice-service -n ${{ inputs.namespace }} -w"
+          echo "kubectl get svc login-microservice -n ${{ inputs.namespace }} -w"
