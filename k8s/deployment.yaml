@@ -3,6 +3,7 @@ kind: Deployment
 metadata:
   name: login-microservice
 spec:
+  replicas: 2
   selector:
     matchLabels:
       app: login-microservice
@@ -15,10 +16,14 @@ spec:
       - name: login-microservice
         image: devrg2025.azurecr.io/login-microservice:latest
         resources:
+          requests:
+            memory: "32Mi"
+            cpu: "100m"
           limits:
-            memory: "128Mi"
-            cpu: "500m"
+            memory: "64Mi"
+            cpu: "250m" 
         ports:
         - containerPort: 8000
       imagePullSecrets:
       - name: secret-82
+
