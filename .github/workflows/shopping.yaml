@@ -1,0 +1,121 @@
+name: Deploy to AKS (With Manual Inputs) - Shopping Microservice
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment (dev, stage, prod)'
+        required: true
+        default: 'dev'
+      namespace:
+        description: 'Kubernetes Namespace'
+        required: true
+        default: 'shop-lab'           # different namespace
+      imageTag:
+        description: 'Image Tag (defaults to v1.0)'
+        required: false
+        default: 'v1.0'
+      ResourceGroup:
+        description: 'AKS Resource Group'
+        required: true
+        default: 'dev-rg'
+      aks_cluster_name:
+        description: 'AKS cluster name'
+        required: true
+        default: 'dev-aks'
+      PULL_SECRET_NAME:
+        description: 'Pull Secret name in cluster'
+        required: true
+        default: 'acr-pull-secret'
+
+env:
+  ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}
+  APP_NAME: shopping-microservice       # changed
+  DEPLOYMENT_NAME: shopping-microservice
+  CONTAINER_NAME: shopping-microservice
+
+jobs:
+  build_push_deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Azure login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Set AKS context
+        uses: azure/aks-set-context@v4
+        with:
+          resource-group: ${{ inputs.ResourceGroup }}
+          cluster-name: ${{ inputs.aks_cluster_name }}
+
+      - name: Docker login to ACR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.ACR_LOGIN_SERVER }}
+          username: ${{ secrets.ACR_USERNAME }}
+          password: ${{ secrets.ACR_PASSWORD }}
+
+      - name: Determine image tag
+        id: vars
+        run: |
+          TAG="${{ inputs.imageTag }}"
+          if [ -z "$TAG" ]; then
+            TAG="${{ github.sha }}"
+          fi
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          echo "Using image tag: $TAG"
+
+      - name: Build and push Docker image
+        id: build
+        run: |
+          FULL_IMAGE=${{ env.ACR_LOGIN_SERVER }}/${{ env.APP_NAME }}:${{ steps.vars.outputs.tag }}
+          echo "Building and pushing: $FULL_IMAGE"
+          docker build -t $FULL_IMAGE ./shopping-microservice   # ← path to shopping folder
+          docker push $FULL_IMAGE
+          echo "image=$FULL_IMAGE" >> $GITHUB_OUTPUT
+
+      - name: Ensure namespace and create ACR pull secret
+        run: |
+          kubectl create namespace ${{ inputs.namespace }} --dry-run=client -o yaml | kubectl apply -f -
+
+          echo "Creating/Updating pull secret: ${{ inputs.PULL_SECRET_NAME }} in namespace ${{ inputs.namespace }}"
+          kubectl create secret docker-registry ${{ inputs.PULL_SECRET_NAME }} \
+            --docker-server=${{ env.ACR_LOGIN_SERVER }} \
+            --docker-username=${{ secrets.ACR_USERNAME }} \
+            --docker-password=${{ secrets.ACR_PASSWORD }} \
+            --namespace ${{ inputs.namespace }} \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Apply Kubernetes manifests
+        run: |
+          kubectl apply -f k8s-shopping/secret.yaml -n ${{ inputs.namespace }} || echo "No secret.yaml (optional)"
+          kubectl apply -f k8s-shopping/deployment-shopping.yaml -n ${{ inputs.namespace }}
+          kubectl apply -f k8s-shopping/service-shopping.yaml -n ${{ inputs.namespace }}
+          # optional: kubectl apply -f k8s-shopping/HPA.yaml -n ${{ inputs.namespace }}
+
+      - name: Update Deployment with new image tag
+        run: |
+          echo "Updating deployment with image: ${{ steps.build.outputs.image }}"
+          kubectl set image deployment/${{ env.DEPLOYMENT_NAME }} \
+            ${{ env.CONTAINER_NAME }}=${{ steps.build.outputs.image }} \
+            -n ${{ inputs.namespace }}
+
+      - name: Wait for rollout to complete
+        run: |
+          echo "Waiting for deployment rollout..."
+          kubectl rollout status deployment/${{ env.DEPLOYMENT_NAME }} \
+            -n ${{ inputs.namespace }} --timeout=300s
+
+      - name: Show service details
+        run: |
+          echo "Deployment successful!"
+          echo "Service details:"
+          kubectl get service shopping-service -n ${{ inputs.namespace }} -o wide
+          echo ""
+          echo "To get external IP (if LoadBalancer):"
+          echo "kubectl get svc shopping-service -n ${{ inputs.namespace }} -w"
